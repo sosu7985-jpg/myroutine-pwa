@@ -4,15 +4,27 @@
   const STORAGE_KEYS = {
     SUPABASE_URL: 'myroutine_sb_url',
     SUPABASE_KEY: 'myroutine_sb_key',
-    LOCAL_HABITS: 'myroutine_habits_data_v2',
-    LOCAL_LOGS: 'myroutine_logs_data_v2'
+    LOCAL_HABITS: 'myroutine_habits_data_v3',
+    LOCAL_LOGS: 'myroutine_logs_data_v3'
   };
 
+  // Helper: Generate valid UUID v4
+  function generateUUID() {
+    if (window.crypto && window.crypto.randomUUID) {
+      return window.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  // Initial Seed Data with valid UUIDs matching Supabase schema
   const INITIAL_HABITS = [
-    { id: 'h-1', title: '💧 아침 물 1L 마시기', type: 'number', unit: 'L', target_value: 1, color: '#3b82f6', created_at: new Date().toISOString() },
-    { id: 'h-2', title: '💪 팔굽혀펴기 50회', type: 'number', unit: '회', target_value: 50, color: '#ef4444', created_at: new Date().toISOString() },
-    { id: 'h-3', title: '📖 매일 독서 30분', type: 'check', unit: '분', target_value: 30, color: '#10b981', created_at: new Date().toISOString() },
-    { id: 'h-4', title: '💊 비타민 영양제 먹기', type: 'check', unit: '회', target_value: 1, color: '#f59e0b', created_at: new Date().toISOString() }
+    { id: '11111111-1111-1111-1111-111111111111', title: '💧 아침 물 1L 마시기', type: 'number', unit: 'L', target_value: 1, color: '#3b82f6', created_at: new Date().toISOString() },
+    { id: '22222211-1111-1111-1111-111111111111', title: '💪 팔굽혀펴기 50회', type: 'number', unit: '회', target_value: 50, color: '#ef4444', created_at: new Date().toISOString() },
+    { id: '33333311-1111-1111-1111-111111111111', title: '📖 매일 독서 30분', type: 'check', unit: '분', target_value: 30, color: '#10b981', created_at: new Date().toISOString() },
+    { id: '44444411-1111-1111-1111-111111111111', title: '💊 비타민 영양제 먹기', type: 'check', unit: '회', target_value: 1, color: '#f59e0b', created_at: new Date().toISOString() }
   ];
 
   let supabaseClient = null;
@@ -64,9 +76,11 @@
     realtimeSubscription = supabaseClient
       .channel('public:myroutine')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'habits' }, () => {
+        console.log('[Realtime] Habits updated');
         notifyListeners();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs' }, () => {
+        console.log('[Realtime] Habit Logs updated');
         notifyListeners();
       })
       .subscribe((status) => {
@@ -105,6 +119,8 @@
         if (!error && data) {
           setLocal(STORAGE_KEYS.LOCAL_HABITS, data);
           return data;
+        } else if (error) {
+          console.error('[Supabase] Fetch habits error:', error);
         }
       } catch (e) {
         console.warn('[Supabase] Fetch habits fallback to LocalStorage', e);
@@ -120,7 +136,9 @@
   }
 
   async function addOrUpdateHabit(habitData) {
-    const id = habitData.id || (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'h-' + Date.now());
+    const isUUID = habitData.id && habitData.id.length === 36 && habitData.id.includes('-');
+    const id = isUUID ? habitData.id : generateUUID();
+
     const habit = {
       id,
       title: habitData.title,
@@ -142,7 +160,8 @@
 
     if (supabaseClient) {
       try {
-        await supabaseClient.from('habits').upsert(habit);
+        const { error } = await supabaseClient.from('habits').upsert(habit);
+        if (error) console.error('[Supabase] Habit upsert error:', error);
       } catch (e) {
         console.error('[Supabase] Habit upsert failed:', e);
       }
@@ -180,6 +199,8 @@
         if (!error && data) {
           setLocal(STORAGE_KEYS.LOCAL_LOGS, data);
           return data;
+        } else if (error) {
+          console.error('[Supabase] Fetch logs error:', error);
         }
       } catch (e) {
         console.warn('[Supabase] Fetch logs fallback to LocalStorage', e);
@@ -193,8 +214,11 @@
     const logs = getLocal(STORAGE_KEYS.LOCAL_LOGS, []);
     const index = logs.findIndex(l => l.habit_id === habitId && (l.log_date === dateStr || l.date === dateStr));
 
+    const isUUID = index >= 0 && logs[index].id && logs[index].id.length === 36 && logs[index].id.includes('-');
+    const logId = isUUID ? logs[index].id : generateUUID();
+
     const updatedLog = {
-      id: index >= 0 ? logs[index].id : (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'l-' + Date.now()),
+      id: logId,
       habit_id: habitId,
       log_date: dateStr,
       status: status, // 'completed' | 'rest' | 'none'
@@ -213,9 +237,11 @@
     if (supabaseClient) {
       try {
         if (status === 'none') {
-          await supabaseClient.from('habit_logs').delete().eq('habit_id', habitId).eq('log_date', dateStr);
+          const { error } = await supabaseClient.from('habit_logs').delete().eq('habit_id', habitId).eq('log_date', dateStr);
+          if (error) console.error('[Supabase] Log delete error:', error);
         } else {
-          await supabaseClient.from('habit_logs').upsert(updatedLog);
+          const { error } = await supabaseClient.from('habit_logs').upsert(updatedLog);
+          if (error) console.error('[Supabase] Log upsert error:', error);
         }
       } catch (e) {
         console.error('[Supabase] Log upsert failed:', e);
