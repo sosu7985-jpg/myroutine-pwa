@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MyRoutine - 습관 관리 PWA</title>
+  
+  <!-- PWA Settings -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/isometric/192/checkmark.png">
+
+  <!-- Tailwind CSS & Custom Styles -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="./css/styles.css">
+
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased selection:bg-indigo-500 selection:text-white min-h-screen">
+  
+  <!-- Main Application Mounting Point -->
+  <div id="app-root">
+    <div class="min-h-screen flex items-center justify-center">
+      <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-indigo-500"></div>
+    </div>
+  </div>
+
+  <!-- Habit Create/Edit Modal -->
+  <div id="habitModal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
+    <div class="glass-panel w-full max-w-md rounded-3xl p-6 shadow-2xl modal-animate border border-slate-700">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-extrabold text-white">습관 설정</h3>
+        <button onclick="appActions.closeHabitModal()" class="text-slate-400 hover:text-slate-200">✕</button>
+      </div>
+
+      <form onsubmit="appActions.saveHabit(event)" class="space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">습관 이름</label>
+          <input
+            id="habitTitleInput"
+            type="text"
+            placeholder="예: 💧 물 1L 마시기, 팔굽혀펴기 50회"
+            class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">습관 유형</label>
+          <select
+            id="habitTypeSelect"
+            onchange="toggleHabitTypeFields()"
+            class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
+          >
+            <option value="check">일반 체크형 (V 완료)</option>
+            <option value="number">수치 입력형 (숫자)</option>
+          </select>
+        </div>
+
+        <div id="numberTypeFields" class="hidden grid grid-cols-2 gap-3 p-3 bg-slate-900/60 rounded-xl border border-slate-800">
+          <div>
+            <label class="block text-slate-400 mb-1">목표 수치</label>
+            <input
+              id="habitTargetInput"
+              type="number"
+              value="1"
+              class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-white"
+            />
+          </div>
+          <div>
+            <label class="block text-slate-400 mb-1">단위</label>
+            <input
+              id="habitUnitInput"
+              type="text"
+              placeholder="예: 회, L, 분"
+              value="회"
+              class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-white"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1.5">대표 색상</label>
+          <div class="flex items-center gap-2">
+            <input type="color" id="habitColorInput" value="#6366f1" class="w-8 h-8 rounded border-0 bg-transparent cursor-pointer">
+            <span class="text-slate-400 text-xs">클릭하여 색상 선택</span>
+          </div>
+        </div>
+
+        <div class="flex gap-2 pt-3">
+          <button
+            type="button"
+            onclick="appActions.closeHabitModal()"
+            class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
+          >
+            취소
+          </button>
+          <button
+            type="submit"
+            class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-600/30"
+          >
+            저장 완료
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Supabase DB Config Modal -->
+  <div id="configModal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
+    <div class="glass-panel w-full max-w-lg rounded-3xl p-6 shadow-2xl modal-animate border border-slate-700">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">🗄️</span>
+          <h3 class="text-lg font-extrabold text-white">Supabase 실시간 DB 연동</h3>
+        </div>
+        <button onclick="appActions.closeConfigModal()" class="text-slate-400 hover:text-slate-200">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-400 mb-4 leading-relaxed">
+        Supabase 프로젝트의 <strong>Project URL</strong>과 <strong>anon public API key</strong>를 입력하면 스마트폰, 태블릿, PC 간 실시간으로 습관 데이터가 동기화됩니다.
+      </p>
+
+      <form onsubmit="appActions.saveConfig(event)" class="space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Supabase URL</label>
+          <input
+            id="sbUrlInput"
+            type="text"
+            placeholder="https://xyz.supabase.co"
+            class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 font-mono text-xs focus:border-indigo-500"
+          />
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Supabase Anon Key</label>
+          <input
+            id="sbKeyInput"
+            type="password"
+            placeholder="eyJhbGciOiJIUzI1NiIsInR5..."
+            class="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-100 font-mono text-xs focus:border-indigo-500"
+          />
+        </div>
+
+        <div class="p-3 bg-indigo-950/40 rounded-xl border border-indigo-800/40 text-[11px] text-indigo-300">
+          📌 DB 테이블 생성을 위해 프로젝트 폴더의 <code>supabase_schema.sql</code> 스크립트를 Supabase SQL Editor에서 실행해 주셔야 합니다.
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button
+            type="button"
+            onclick="appActions.clearConfig()"
+            class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
+          >
+            연동 해제 (로컬 모드)
+          </button>
+          <button
+            type="submit"
+            class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-600/30"
+          >
+            설정 저장 & 연동
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="./js/supabase.js"></script>
+  <script src="./js/app.js"></script>
+
+  <!-- PWA Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => reg.update());
+      });
+    }
+  </script>
+</body>
+</html>

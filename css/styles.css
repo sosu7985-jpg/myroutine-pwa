@@ -1,0 +1,140 @@
+/* Modern Aesthetic & Glassmorphism Theme for MyRoutine PWA */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  --color-primary: #6366f1;
+  --color-primary-hover: #4f46e5;
+  --color-bg-dark: #090d16;
+  --color-card-dark: rgba(15, 23, 42, 0.75);
+  --color-border-dark: rgba(255, 255, 255, 0.08);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg-dark);
+  background-image: 
+    radial-gradient(at 10% 10%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+    radial-gradient(at 90% 90%, rgba(236, 72, 153, 0.12) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(16, 185, 129, 0.08) 0px, transparent 50%);
+  background-attachment: fixed;
+  color: #f8fafc;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Glassmorphism Cards */
+.glass-panel {
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+.glass-card {
+  background: rgba(30, 41, 59, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  background: rgba(30, 41, 59, 0.75);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+/* Pulse / Highlight for Today Column */
+.today-column-header {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.25) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border-radius: 12px 12px 0 0;
+  border-bottom: 2px solid #818cf8;
+}
+
+.today-column-cell {
+  background: rgba(99, 102, 241, 0.04);
+}
+
+/* Habit Status Badges & Cells */
+.status-btn {
+  transition: all 0.18s ease-in-out;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.status-btn:active {
+  transform: scale(0.92);
+}
+
+.status-completed {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+.status-rest {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(71, 85, 105, 0.25);
+}
+
+.status-none {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  color: #64748b;
+}
+
+.status-none:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #94a3b8;
+}
+
+/* Modal Animations */
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-animate {
+  animation: modalSlideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Confetti / Check Pop Animation */
+@keyframes popCheck {
+  0% { transform: scale(0.7); }
+  50% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+.animate-pop {
+  animation: popCheck 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
