@@ -8,6 +8,15 @@
     LOCAL_LOGS: 'myroutine_logs_data_v3'
   };
 
+  // Helper: Sanitize Supabase URL (strip trailing /rest/v1 and slashes)
+  function sanitizeUrl(rawUrl) {
+    if (!rawUrl) return '';
+    let cleaned = rawUrl.trim();
+    cleaned = cleaned.replace(/\/rest\/v1\/?$/i, '');
+    cleaned = cleaned.replace(/\/+$/, '');
+    return cleaned;
+  }
+
   // Helper: Generate valid UUID v4
   function generateUUID() {
     if (window.crypto && window.crypto.randomUUID) {
@@ -19,7 +28,6 @@
     });
   }
 
-  // Initial Seed Data with valid UUIDs matching Supabase schema
   const INITIAL_HABITS = [
     { id: '11111111-1111-1111-1111-111111111111', title: '💧 아침 물 1L 마시기', type: 'number', unit: 'L', target_value: 1, color: '#3b82f6', created_at: new Date().toISOString() },
     { id: '22222211-1111-1111-1111-111111111111', title: '💪 팔굽혀펴기 50회', type: 'number', unit: '회', target_value: 50, color: '#ef4444', created_at: new Date().toISOString() },
@@ -39,13 +47,16 @@
   }
 
   function setSupabaseConfig(url, key) {
-    if (!url || !key) {
+    const cleanedUrl = sanitizeUrl(url);
+    const cleanedKey = (key || '').trim();
+
+    if (!cleanedUrl || !cleanedKey) {
       localStorage.removeItem(STORAGE_KEYS.SUPABASE_URL);
       localStorage.removeItem(STORAGE_KEYS.SUPABASE_KEY);
       supabaseClient = null;
     } else {
-      localStorage.setItem(STORAGE_KEYS.SUPABASE_URL, url);
-      localStorage.setItem(STORAGE_KEYS.SUPABASE_KEY, key);
+      localStorage.setItem(STORAGE_KEYS.SUPABASE_URL, cleanedUrl);
+      localStorage.setItem(STORAGE_KEYS.SUPABASE_KEY, cleanedKey);
     }
     initSupabase();
     notifyListeners();
@@ -53,10 +64,12 @@
 
   function initSupabase() {
     const { url, key } = getSupabaseConfig();
-    if (url && key && window.supabase && window.supabase.createClient) {
+    const cleanedUrl = sanitizeUrl(url);
+
+    if (cleanedUrl && key && window.supabase && window.supabase.createClient) {
       try {
-        supabaseClient = window.supabase.createClient(url, key);
-        console.log('[Supabase] Initialized successfully');
+        supabaseClient = window.supabase.createClient(cleanedUrl, key);
+        console.log('[Supabase] Initialized successfully with URL:', cleanedUrl);
         setupRealtime();
       } catch (e) {
         console.error('[Supabase] Initialization error:', e);
@@ -221,7 +234,7 @@
       id: logId,
       habit_id: habitId,
       log_date: dateStr,
-      status: status, // 'completed' | 'rest' | 'none'
+      status: status,
       numeric_value: Number(numericValue) || 0,
       updated_at: new Date().toISOString()
     };
