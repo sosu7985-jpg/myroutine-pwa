@@ -38,6 +38,16 @@
   let supabaseClient = null;
   let realtimeSubscription = null;
   let listeners = [];
+  let authenticatedUserId = null;
+
+  function isServiceRoleKey(key) {
+    try {
+      const payload = JSON.parse(atob(key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return payload.role === 'service_role';
+    } catch (_) {
+      return false;
+    }
+  }
 
   function getSupabaseConfig() {
     return {
@@ -54,15 +64,17 @@
       localStorage.removeItem(STORAGE_KEYS.SUPABASE_URL);
       localStorage.removeItem(STORAGE_KEYS.SUPABASE_KEY);
       supabaseClient = null;
+      authenticatedUserId = null;
     } else {
       localStorage.setItem(STORAGE_KEYS.SUPABASE_URL, cleanedUrl);
       localStorage.setItem(STORAGE_KEYS.SUPABASE_KEY, cleanedKey);
     }
-    initSupabase();
+    const initialized = initSupabase();
     notifyListeners();
+    return initialized;
   }
 
-  function initSupabase() {
+  async function initSupabase() {
     const { url, key } = getSupabaseConfig();
     const cleanedUrl = sanitizeUrl(url);
 
@@ -70,35 +82,73 @@
       try {
         supabaseClient = window.supabase.createClient(cleanedUrl, key);
         console.log('[Supabase] Initialized successfully with URL:', cleanedUrl);
-        setupRealtime();
+        const { data } = await supabaseClient.auth.getSession();
+        authenticatedUserId = data.session?.user?.id || null;
+        if (authenticatedUserId) await setupRealtime();
       } catch (e) {
         console.error('[Supabase] Initialization error:', e);
         supabaseClient = null;
+        authenticatedUserId = null;
       }
     } else {
       supabaseClient = null;
+      authenticatedUserId = null;
     }
+    return Boolean(authenticatedUserId);
   }
 
-  function setupRealtime() {
-    if (!supabaseClient) return;
+  async function setupRealtime() {
+    if (!supabaseClient || !authenticatedUserId) return;
     if (realtimeSubscription) {
       supabaseClient.removeChannel(realtimeSubscription);
     }
 
     realtimeSubscription = supabaseClient
       .channel('public:myroutine')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'habits' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habits', filter: `user_id=eq.${authenticatedUserId}` }, () => {
         console.log('[Realtime] Habits updated');
         notifyListeners();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'habit_logs', filter: `user_id=eq.${authenticatedUserId}` }, () => {
         console.log('[Realtime] Habit Logs updated');
         notifyListeners();
       })
       .subscribe((status) => {
         console.log('[Supabase Realtime Status]:', status);
       });
+  }
+
+  async function connectSupabase(url, key, email, password, createAccount) {
+    const cleanedUrl = sanitizeUrl(url);
+    const cleanedKey = (key || '').trim();
+    if (!/^https:\/\//i.test(cleanedUrl)) throw new Error('Supabase HTTPS URL을 확인해 주세요.');
+    if (!cleanedKey) throw new Error('Anon public key를 입력해 주세요.');
+    if (isServiceRoleKey(cleanedKey)) throw new Error('service_role 키는 브라우저에 저장할 수 없습니다. anon key를 사용해 주세요.');
+    if (!email || !email.includes('@')) throw new Error('로그인 이메일을 확인해 주세요.');
+    if (!password || password.length < 8) throw new Error('비밀번호는 8자 이상이어야 합니다.');
+
+    localStorage.setItem(STORAGE_KEYS.SUPABASE_URL, cleanedUrl);
+    localStorage.setItem(STORAGE_KEYS.SUPABASE_KEY, cleanedKey);
+    await initSupabase();
+    const authResult = createAccount
+      ? await supabaseClient.auth.signUp({ email, password })
+      : await supabaseClient.auth.signInWithPassword({ email, password });
+    if (authResult.error) throw authResult.error;
+    authenticatedUserId = authResult.data.session?.user?.id || null;
+    if (!authenticatedUserId) return { needsConfirmation: true };
+
+    const { error } = await supabaseClient.from('habits').select('id').limit(1);
+    if (error) {
+      authenticatedUserId = null;
+      throw new Error(`DB 권한 또는 스키마 확인 필요: ${error.message}`);
+    }
+    await setupRealtime();
+    notifyListeners();
+    return { needsConfirmation: false };
+  }
+
+  function isConnected() {
+    return Boolean(supabaseClient && authenticatedUserId);
   }
 
   function subscribeDataChanges(callback) {
@@ -134,9 +184,11 @@
           return data;
         } else if (error) {
           console.error('[Supabase] Fetch habits error:', error);
+          authenticatedUserId = null;
         }
       } catch (e) {
         console.warn('[Supabase] Fetch habits fallback to LocalStorage', e);
+        authenticatedUserId = null;
       }
     }
 
@@ -161,6 +213,7 @@
       color: habitData.color || '#6366f1',
       created_at: habitData.created_at || new Date().toISOString()
     };
+    if (authenticatedUserId) habit.user_id = authenticatedUserId;
 
     let habits = getLocal(STORAGE_KEYS.LOCAL_HABITS, INITIAL_HABITS);
     const index = habits.findIndex(h => h.id === id);
@@ -174,9 +227,14 @@
     if (supabaseClient) {
       try {
         const { error } = await supabaseClient.from('habits').upsert(habit);
-        if (error) console.error('[Supabase] Habit upsert error:', error);
+        if (error) {
+          authenticatedUserId = null;
+          throw error;
+        }
       } catch (e) {
+        authenticatedUserId = null;
         console.error('[Supabase] Habit upsert failed:', e);
+        throw e;
       }
     }
 
@@ -195,10 +253,13 @@
 
     if (supabaseClient) {
       try {
-        await supabaseClient.from('habits').delete().eq('id', habitId);
-        await supabaseClient.from('habit_logs').delete().eq('habit_id', habitId);
+        const { error: logError } = await supabaseClient.from('habit_logs').delete().eq('habit_id', habitId);
+        const { error: habitError } = await supabaseClient.from('habits').delete().eq('id', habitId);
+        if (logError || habitError) throw logError || habitError;
       } catch (e) {
+        authenticatedUserId = null;
         console.error('[Supabase] Habit delete failed:', e);
+        throw e;
       }
     }
 
@@ -214,9 +275,11 @@
           return data;
         } else if (error) {
           console.error('[Supabase] Fetch logs error:', error);
+          authenticatedUserId = null;
         }
       } catch (e) {
         console.warn('[Supabase] Fetch logs fallback to LocalStorage', e);
+        authenticatedUserId = null;
       }
     }
 
@@ -238,6 +301,7 @@
       numeric_value: Number(numericValue) || 0,
       updated_at: new Date().toISOString()
     };
+    if (authenticatedUserId) updatedLog.user_id = authenticatedUserId;
 
     if (status === 'none') {
       if (index >= 0) logs.splice(index, 1);
@@ -251,13 +315,15 @@
       try {
         if (status === 'none') {
           const { error } = await supabaseClient.from('habit_logs').delete().eq('habit_id', habitId).eq('log_date', dateStr);
-          if (error) console.error('[Supabase] Log delete error:', error);
+          if (error) throw error;
         } else {
           const { error } = await supabaseClient.from('habit_logs').upsert(updatedLog);
-          if (error) console.error('[Supabase] Log upsert error:', error);
+          if (error) throw error;
         }
       } catch (e) {
+        authenticatedUserId = null;
         console.error('[Supabase] Log upsert failed:', e);
+        throw e;
       }
     }
 
@@ -270,6 +336,8 @@
     getSupabaseConfig,
     setSupabaseConfig,
     initSupabase,
+    connectSupabase,
+    isConnected,
     subscribeDataChanges,
     fetchHabits,
     addOrUpdateHabit,

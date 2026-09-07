@@ -12,6 +12,19 @@
   let numberModalTarget = null; // { habit, dateStr, log }
   let deferredPrompt = null;
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function safeColor(value) {
+    return /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : '#6366f1';
+  }
+
   // Date Helpers
   function formatDate(d) {
     const year = d.getFullYear();
@@ -79,7 +92,7 @@
 
   // Initialize
   window.addEventListener('DOMContentLoaded', async () => {
-    DB.initSupabase();
+    await DB.initSupabase();
     DB.subscribeDataChanges(() => {
       reloadData();
     });
@@ -195,14 +208,36 @@
     closeConfigModal: () => {
       document.getElementById('configModal').classList.add('hidden');
     },
-    saveConfig: (e) => {
+    saveConfig: async (e) => {
       e.preventDefault();
       const url = document.getElementById('sbUrlInput').value.trim();
       const key = document.getElementById('sbKeyInput').value.trim();
-      DB.setSupabaseConfig(url, key);
-      alert('Supabase 설정이 저장되었습니다. 데이터가 실시간으로 동기화됩니다!');
-      document.getElementById('configModal').classList.add('hidden');
-      reloadData();
+      const email = document.getElementById('sbEmailInput').value.trim();
+      const password = document.getElementById('sbPasswordInput').value;
+      try {
+        await DB.connectSupabase(url, key, email, password, false);
+        alert('Supabase 로그인과 연결 검사가 완료되었습니다.');
+        document.getElementById('configModal').classList.add('hidden');
+        await reloadData();
+      } catch (error) {
+        alert(`Supabase 연결 실패: ${error.message}`);
+      }
+    },
+    createSupabaseAccount: async () => {
+      const url = document.getElementById('sbUrlInput').value.trim();
+      const key = document.getElementById('sbKeyInput').value.trim();
+      const email = document.getElementById('sbEmailInput').value.trim();
+      const password = document.getElementById('sbPasswordInput').value;
+      try {
+        const result = await DB.connectSupabase(url, key, email, password, true);
+        alert(result.needsConfirmation ? '가입 확인 메일을 확인한 뒤 로그인해 주세요.' : '계정 생성과 로그인이 완료되었습니다.');
+        if (!result.needsConfirmation) {
+          document.getElementById('configModal').classList.add('hidden');
+          await reloadData();
+        }
+      } catch (error) {
+        alert(`계정 생성 실패: ${error.message}`);
+      }
     },
     clearConfig: () => {
       DB.setSupabaseConfig('', '');
@@ -215,7 +250,10 @@
     installPWA: () => {
       if (deferredPrompt) {
         deferredPrompt.prompt();
-        deferredPrompt.userChoice.then(() => setDeferredPrompt(null));
+        deferredPrompt.userChoice.then(() => {
+          deferredPrompt = null;
+          render();
+        });
       } else {
         alert('모바일 Safari 또는 Chrome 메뉴의 [홈 화면에 추가]를 눌러 앱으로 바로 설치할 수 있습니다.');
       }
@@ -231,7 +269,7 @@
     const todayStr = formatDate(new Date());
     const stats = calculateStats(weekDays);
     const sbConfig = DB.getSupabaseConfig();
-    const isSbConnected = Boolean(sbConfig.url && sbConfig.key);
+    const isSbConnected = DB.isConnected();
 
     let html = `
       <div class="max-w-4xl mx-auto px-3 sm:px-6 py-4 pb-20">
@@ -366,7 +404,7 @@
           </div>
           <div class="w-36 sm:w-48 bg-slate-800/80 rounded-full h-3 overflow-hidden p-0.5 border border-slate-700/60">
             <div 
-              className="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-500 shadow-sm"
+              class="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-500 shadow-sm"
               style="width: ${stats.percent}%; background: linear-gradient(90deg, #6366f1, #10b981);"
             ></div>
           </div>
@@ -421,11 +459,11 @@
         <td class="py-3.5 px-4">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2.5 min-w-0">
-              <span className="w-3 h-3 rounded-full shrink-0 shadow-sm" style="background-color: ${habit.color || '#6366f1'}; display: inline-block; width: 12px; height: 12px;"></span>
+              <span class="w-3 h-3 rounded-full shrink-0 shadow-sm" style="background-color: ${safeColor(habit.color)}; display: inline-block; width: 12px; height: 12px;"></span>
               <div class="truncate">
-                <div class="text-sm font-bold text-slate-100 truncate">${habit.title}</div>
+                <div class="text-sm font-bold text-slate-100 truncate">${escapeHtml(habit.title)}</div>
                 <div class="text-[11px] text-slate-400 mt-0.5">
-                  ${habit.type === 'number' ? `목표: ${habit.target_value} ${habit.unit}` : '일반 체크 완료'}
+                  ${habit.type === 'number' ? `목표: ${habit.target_value} ${escapeHtml(habit.unit)}` : '일반 체크 완료'}
                 </div>
               </div>
             </div>
@@ -472,7 +510,7 @@
                 >
                   ${status === 'rest' ? '🌙' : log && log.numeric_value > 0 ? `
                     <span class="text-[11px] font-extrabold">${log.numeric_value}</span>
-                    <span class="text-[8px] opacity-75">${habit.unit}</span>
+                    <span class="text-[8px] opacity-75">${escapeHtml(habit.unit)}</span>
                   ` : '<span class="text-xs text-slate-500 font-medium">+</span>'}
                 </button>
               `}
@@ -551,8 +589,8 @@
               <div class="bg-slate-900/60 rounded-xl p-3.5 border border-slate-800">
                 <div class="flex items-center justify-between text-xs mb-2">
                   <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${habit.color}"></span>
-                    <span class="font-bold text-slate-100">${habit.title}</span>
+                    <span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${safeColor(habit.color)}"></span>
+                    <span class="font-bold text-slate-100">${escapeHtml(habit.title)}</span>
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="text-slate-400">${completedDays} / ${targetDays}일 (쉼 ${restDays}일)</span>
@@ -563,7 +601,7 @@
                 <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
                   <div 
                     class="h-full rounded-full transition-all duration-700"
-                    style="width: ${rate}%; background-color: ${habit.color || '#6366f1'};"
+                    style="width: ${rate}%; background-color: ${safeColor(habit.color)};"
                   ></div>
                 </div>
               </div>
@@ -588,13 +626,13 @@
           <div class="flex items-center justify-between mb-4">
             <div>
               <span class="text-xs text-indigo-400 font-semibold">${dateStr}</span>
-              <h3 class="text-lg font-extrabold text-white mt-0.5">${habit.title}</h3>
+              <h3 class="text-lg font-extrabold text-white mt-0.5">${escapeHtml(habit.title)}</h3>
             </div>
             <button onclick="appActions.closeNumberModal()" class="text-slate-400 hover:text-slate-200 text-lg">✕</button>
           </div>
 
           <div class="bg-slate-900/80 rounded-2xl p-4 border border-slate-800 mb-4 text-center">
-            <div class="text-xs text-slate-400 mb-1">목표: ${habit.target_value || 1} ${habit.unit}</div>
+            <div class="text-xs text-slate-400 mb-1">목표: ${habit.target_value || 1} ${escapeHtml(habit.unit)}</div>
 
             <div class="flex items-center justify-center gap-3 my-2">
               <button
@@ -610,7 +648,7 @@
                   value="${currentVal}"
                   class="w-24 bg-transparent text-center text-3xl font-extrabold text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded-lg"
                 />
-                <span class="text-sm font-semibold text-slate-400">${habit.unit}</span>
+                <span class="text-sm font-semibold text-slate-400">${escapeHtml(habit.unit)}</span>
               </div>
               <button
                 onclick="document.getElementById('numValInput').value = Number(document.getElementById('numValInput').value) + 1"
