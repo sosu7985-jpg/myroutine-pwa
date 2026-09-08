@@ -176,7 +176,7 @@
   }
 
   async function fetchHabits() {
-    if (supabaseClient) {
+    if (supabaseClient && authenticatedUserId) {
       try {
         const { data, error } = await supabaseClient.from('habits').select('*').order('created_at', { ascending: true });
         if (!error && data) {
@@ -224,7 +224,7 @@
     }
     setLocal(STORAGE_KEYS.LOCAL_HABITS, habits);
 
-    if (supabaseClient) {
+    if (supabaseClient && authenticatedUserId) {
       try {
         const { error } = await supabaseClient.from('habits').upsert(habit);
         if (error) {
@@ -251,7 +251,7 @@
     logs = logs.filter(l => l.habit_id !== habitId);
     setLocal(STORAGE_KEYS.LOCAL_LOGS, logs);
 
-    if (supabaseClient) {
+    if (supabaseClient && authenticatedUserId) {
       try {
         const { error: logError } = await supabaseClient.from('habit_logs').delete().eq('habit_id', habitId);
         const { error: habitError } = await supabaseClient.from('habits').delete().eq('id', habitId);
@@ -267,7 +267,7 @@
   }
 
   async function fetchLogs() {
-    if (supabaseClient) {
+    if (supabaseClient && authenticatedUserId) {
       try {
         const { data, error } = await supabaseClient.from('habit_logs').select('*');
         if (!error && data) {
@@ -311,7 +311,7 @@
     }
     setLocal(STORAGE_KEYS.LOCAL_LOGS, logs);
 
-    if (supabaseClient) {
+    if (supabaseClient && authenticatedUserId) {
       try {
         if (status === 'none') {
           const { error } = await supabaseClient.from('habit_logs').delete().eq('habit_id', habitId).eq('log_date', dateStr);

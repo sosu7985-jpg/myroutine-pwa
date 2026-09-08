@@ -1,4 +1,4 @@
-const CACHE_NAME = 'myroutine-v3';
+const CACHE_NAME = 'myroutine-v4';
 const APP_ASSETS = [
   './',
   './index.html',
@@ -26,13 +26,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(event.request).catch(() => caches.match('./index.html')));
     return;
   }
-  event.respondWith(caches.match(event.request).then((cached) => {
-    const network = fetch(event.request).then((response) => {
+  event.respondWith(fetch(event.request).then((response) => {
       if (response.ok && new URL(event.request.url).origin === self.location.origin) {
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
       }
       return response;
-    });
-    return cached || network;
-  }));
+    }).catch(() => caches.match(event.request)));
 });
