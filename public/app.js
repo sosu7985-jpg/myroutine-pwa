@@ -9,6 +9,7 @@ const state = {
   error: '',
   lastLoaded: null,
   installPrompt: null,
+  needsNetworkPermission: false,
   busy: false
 };
 
@@ -156,10 +157,11 @@ function topHtml() {
   return `
     <header class="topbar">
       <div class="brand"><div class="brand-mark">✓</div><div><h1>MyRoutine</h1><p>나에게 집중하는 작은 기록</p></div></div>
-      <button class="status ${state.health ? '' : 'offline'}" data-action="reload">
-        <span class="status-dot"></span><span>${state.health ? '서버 연결됨' : '연결 끊김'}</span><span class="status-time">${time}</span>
+      <button class="status ${state.health ? '' : 'offline'}" data-action="${state.needsNetworkPermission ? 'authorize-network' : 'reload'}">
+        <span class="status-dot"></span><span>${state.health ? '서버 연결됨' : state.needsNetworkPermission ? '연결 권한 필요' : '연결 끊김'}</span><span class="status-time">${time}</span>
       </button>
     </header>
+    ${state.needsNetworkPermission ? `<div class="notice"><span>설치 화면이 Tailscale 서버에 연결하도록 허용해 주세요.</span><button data-action="authorize-network">Tailscale 서버 연결 허용</button></div>` : ''}
     ${state.error ? `<div class="notice"><span>${esc(state.error)}</span><button data-action="reload">다시 시도</button></div>` : ''}
     <section class="panel hero">
       <div><span class="eyebrow">이번 주</span><h2>${metrics.percent}% 달성</h2><p>${metrics.completed}/${metrics.targets} 완료${metrics.partial ? ` · 진행 중 ${metrics.partial}` : ''}${metrics.rest ? ` · 쉼 ${metrics.rest}` : ''}</p></div>
@@ -343,6 +345,11 @@ document.addEventListener('click', async (event) => {
   if (button.classList.contains('modal-backdrop') && event.target !== button) return;
   const action = button.dataset.action;
   if (action === 'tab') { state.tab = button.dataset.tab; state.modal = null; render(); return; }
+  if (action === 'authorize-network') {
+    state.needsNetworkPermission = false;
+    state.error = '';
+    return loadData();
+  }
   if (action === 'reload') return loadData();
   if (action === 'add-habit') { state.modal = { type: 'habit', habit: null }; render(); return; }
   if (action === 'close-modal') { state.modal = null; render(); return; }
@@ -458,4 +465,26 @@ if ('serviceWorker' in navigator) {
 }
 
 render();
-loadData();
+
+async function initialize() {
+  if (API_ORIGIN && 'permissions' in navigator) {
+    try {
+      const permission = await navigator.permissions.query({ name: 'local-network-access' });
+      if (permission.state === 'prompt') {
+        state.needsNetworkPermission = true;
+        render();
+        return;
+      }
+      if (permission.state === 'denied') {
+        state.error = 'Chrome 사이트 설정에서 로컬 네트워크 접근을 허용해 주세요.';
+        render();
+        return;
+      }
+    } catch {
+      // Older browsers request access directly when the API call starts.
+    }
+  }
+  loadData();
+}
+
+initialize();
