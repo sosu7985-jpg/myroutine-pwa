@@ -76,9 +76,8 @@ async function loadData({ quiet = false } = {}) {
   if (state.busy) return;
   state.busy = true;
   try {
-    const [health, habitData, logData] = await Promise.all([
-      api('/api/health'), api('/api/habits'), api('/api/logs')
-    ]);
+    const health = await api('/api/health');
+    const [habitData, logData] = await Promise.all([api('/api/habits'), api('/api/logs')]);
     state.health = health;
     state.habits = habitData.habits;
     state.logs = logData.logs;
@@ -347,7 +346,8 @@ document.addEventListener('click', async (event) => {
   if (action === 'tab') { state.tab = button.dataset.tab; state.modal = null; render(); return; }
   if (action === 'authorize-network') {
     state.needsNetworkPermission = false;
-    state.error = '';
+    state.error = 'Chrome 권한창이 뜨면 로컬 네트워크 접근을 허용해 주세요.';
+    render();
     return loadData();
   }
   if (action === 'reload') return loadData();
