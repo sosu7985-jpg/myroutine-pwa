@@ -1,0 +1,19 @@
+{
+  "id": "./myroutine-private-v3",
+  "name": "MyRoutine - 나의 루틴",
+  "short_name": "MyRoutine",
+  "description": "Tailscale 전용 개인 루틴 관리 앱",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#0b1120",
+  "theme_color": "#111827",
+  "orientation": "any",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
