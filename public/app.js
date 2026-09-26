@@ -61,6 +61,7 @@ function activeHabits() {
 async function api(path, options = {}) {
   const response = await fetch(`${API_ORIGIN}${path}`, {
     ...options,
+    ...(API_ORIGIN ? { targetAddressSpace: 'local' } : {}),
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     cache: 'no-store'
   });
@@ -450,7 +451,7 @@ setInterval(() => loadData({ quiet: true }), 60_000);
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(new URL('./sw.js', import.meta.url), { scope: './' }).catch(() => {
+    navigator.serviceWorker.register(new URL('./sw.js?v=2', import.meta.url), { scope: './' }).catch(() => {
       // The web app remains usable in the browser even if registration fails.
     });
   });

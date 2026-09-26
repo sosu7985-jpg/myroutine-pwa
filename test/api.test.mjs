@@ -102,6 +102,7 @@ test('static app is served without external dependencies', async () => {
   const worker = await workerResponse.text();
   assert.equal(workerResponse.status, 200);
   assert.match(worker, /respondWith\(fetch\(event\.request\)\)/);
+  assert.match(worker, /requestUrl\.origin === self\.location\.origin/);
   assert.doesNotMatch(worker, /caches\./);
 });
 
