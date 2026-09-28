@@ -1,4 +1,5 @@
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const COLORS = ['#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#84cc16', '#f59e0b', '#f97316', '#ef4444', '#ec4899', '#a855f7'];
 const state = {
   habits: [],
   logs: [],
@@ -52,7 +53,7 @@ function logFor(habitId, date) {
 }
 
 function scheduled(habit, date) {
-  return habit.schedule_days.includes(parseDate(date).getDay());
+  return habit.schedule_type === 'weekly' && habit.schedule_days.includes(parseDate(date).getDay());
 }
 
 function activeHabits() {
@@ -89,8 +90,36 @@ async function loadData({ quiet = false } = {}) {
     if (!quiet) console.error(error);
   } finally {
     state.busy = false;
-    render();
+    if (!state.modal) render();
   }
+}
+
+function completedLogs(habitId) {
+  return state.logs
+    .filter((log) => log.habit_id === habitId && log.status === 'completed')
+    .sort((a, b) => b.log_date.localeCompare(a.log_date));
+}
+
+function periodicInfo(habit, today = localDate()) {
+  const logs = completedLogs(habit.id);
+  if (habit.schedule_type === 'monthly') {
+    const completion = logs.find((log) => log.log_date.startsWith(today.slice(0, 7))) || null;
+    return {
+      completion,
+      state: completion ? 'completed' : 'due',
+      meta: completion ? `${completion.log_date} 완료` : '이번 달 안에 1회',
+      sort: completion ? 3 : 1
+    };
+  }
+
+  const completion = logs[0] || null;
+  const dueDate = completion
+    ? localDate(addDays(parseDate(completion.log_date), habit.interval_days))
+    : habit.anchor_date;
+  const diff = Math.round((parseDate(dueDate) - parseDate(today)) / 86400000);
+  if (diff < 0) return { completion, dueDate, state: 'overdue', meta: `${Math.abs(diff)}일 지남 · 예정 ${dueDate}`, sort: 0 };
+  if (diff === 0) return { completion, dueDate, state: 'due', meta: `오늘 예정 · ${habit.interval_days}일마다`, sort: 1 };
+  return { completion, dueDate, state: 'upcoming', meta: `${diff}일 후 · ${dueDate}`, sort: 2 };
 }
 
 function weekMetrics(habits = activeHabits()) {
@@ -171,6 +200,10 @@ function topHtml() {
 function todayHtml() {
   const key = localDate();
   const habits = activeHabits().filter((habit) => scheduled(habit, key));
+  const periodic = activeHabits()
+    .filter((habit) => habit.schedule_type !== 'weekly')
+    .map((habit) => ({ habit, info: periodicInfo(habit, key) }))
+    .sort((a, b) => a.info.sort - b.info.sort || a.habit.sort_order - b.habit.sort_order);
   const done = habits.filter((habit) => logFor(habit.id, key)?.status === 'completed').length;
   return `
     <div class="section-head"><div><h2>오늘의 루틴</h2><p>${key} · ${done}/${habits.length} 완료</p></div><button class="btn primary" data-action="add-habit">+ 추가</button></div>
@@ -188,7 +221,18 @@ function todayHtml() {
           </div>
         </article>`;
       }).join('') : `<div class="panel empty"><span class="emoji">🌿</span>오늘 예정된 루틴이 없습니다.<br><button class="btn primary" data-action="add-habit" style="margin-top:12px">첫 루틴 만들기</button></div>`}
-    </div>`;
+    </div>
+    ${periodic.length ? `
+      <div class="section-head periodic-head"><div><h2>주기 루틴</h2><p>매일 하지 않는 큰 단위의 할 일</p></div></div>
+      <div class="periodic-list">${periodic.map(({ habit, info }) => {
+        const isChecked = habit.schedule_type === 'monthly' ? Boolean(info.completion) : info.completion?.log_date === key;
+        return `<article class="panel periodic-card ${info.state}">
+          <span class="habit-dot" style="--habit-color:${habit.color}"></span>
+          <div class="periodic-main"><div class="habit-title">${esc(habit.title)}</div><div class="habit-meta">${esc(info.meta)}</div></div>
+          <span class="periodic-badge">${isChecked ? '완료' : info.state === 'overdue' ? '기한 지남' : info.state === 'due' ? (habit.schedule_type === 'monthly' ? '이번 달' : '오늘') : '예정'}</span>
+          <button class="check-button ${isChecked ? 'completed' : ''}" data-action="periodic-record" data-id="${habit.id}" data-today="${key}" aria-label="${isChecked ? '완료 취소' : '완료'}">${isChecked ? '✓' : ''}</button>
+        </article>`;
+      }).join('')}</div>` : ''}`;
 }
 
 function weekHtml() {
@@ -196,7 +240,7 @@ function weekHtml() {
   const today = localDate();
   const start = localDate(days[0]);
   const end = localDate(days[6]);
-  const habits = activeHabits();
+  const habits = activeHabits().filter((habit) => habit.schedule_type === 'weekly');
   return `
     <div class="panel week-toolbar">
       <div class="week-nav"><button class="btn small" data-action="prev-week">‹</button><button class="btn small" data-action="this-week">오늘</button><button class="btn small" data-action="next-week">›</button></div>
@@ -216,7 +260,7 @@ function weekHtml() {
 }
 
 function statsHtml() {
-  const habits = activeHabits();
+  const habits = activeHabits().filter((habit) => habit.schedule_type === 'weekly');
   const metrics = weekMetrics(habits);
   const streakData = habits.map((habit) => ({ habit, ...streaks(habit) }));
   const bestCurrent = Math.max(0, ...streakData.map((item) => item.current));
@@ -238,9 +282,14 @@ function statsHtml() {
 function manageHtml() {
   const active = activeHabits();
   const archived = state.habits.filter((habit) => habit.archived);
+  const scheduleLabel = (habit) => habit.schedule_type === 'interval'
+    ? `${habit.interval_days}일마다`
+    : habit.schedule_type === 'monthly'
+      ? '매월 1회'
+      : habit.schedule_days.map((d) => DAYS[d]).join('·');
   const row = (habit, index, list, isArchived = false) => `<article class="panel manage-row">
     <span class="habit-dot" style="--habit-color:${habit.color}"></span>
-    <div class="manage-main"><div class="habit-title">${esc(habit.title)}</div><div class="habit-meta">${habit.schedule_days.map((d) => DAYS[d]).join('·')} · ${habit.type === 'number' ? `${habit.target_value} ${esc(habit.unit)}` : '체크형'}</div></div>
+    <div class="manage-main"><div class="habit-title">${esc(habit.title)}</div><div class="habit-meta">${scheduleLabel(habit)} · ${habit.type === 'number' ? `${habit.target_value} ${esc(habit.unit)}` : '체크형'}</div></div>
     <div class="manage-actions">
       ${isArchived ? `<button class="btn small" data-action="restore" data-id="${habit.id}">복원</button>` : `<button class="btn small" data-action="move" data-direction="up" data-id="${habit.id}" ${index === 0 ? 'disabled' : ''}>↑</button><button class="btn small" data-action="move" data-direction="down" data-id="${habit.id}" ${index === list.length - 1 ? 'disabled' : ''}>↓</button><button class="btn small" data-action="edit" data-id="${habit.id}">수정</button><button class="btn small danger" data-action="archive" data-id="${habit.id}">보관</button>`}
     </div>
@@ -260,17 +309,28 @@ function manageHtml() {
 }
 
 function habitModalHtml(habit = null) {
-  const selected = habit?.schedule_days || [0,1,2,3,4,5,6];
+  const draft = state.modal?.draft;
+  const source = draft || habit || {};
+  const selected = source.schedule_days || [0,1,2,3,4,5,6];
+  const scheduleType = source.schedule_type || 'weekly';
+  const color = source.color || '#6366f1';
+  const palette = [...new Set([...COLORS, color])];
   return `<div class="modal-backdrop" data-action="close-modal"><form class="panel modal" id="habitForm" data-id="${habit?.id || ''}" onclick="event.stopPropagation()">
     <h2>${habit ? '루틴 수정' : '새 루틴'}</h2>
-    <div class="field"><label for="habitTitle">이름</label><input id="habitTitle" name="title" maxlength="100" required value="${esc(habit?.title || '')}" placeholder="예: 물 1L 마시기"></div>
-    <div class="field"><label for="habitType">기록 방식</label><select id="habitType" name="type"><option value="check" ${habit?.type !== 'number' ? 'selected' : ''}>체크형</option><option value="number" ${habit?.type === 'number' ? 'selected' : ''}>수치형</option></select></div>
+    <div class="field"><label for="habitTitle">이름</label><input id="habitTitle" name="title" maxlength="100" required value="${esc(source.title || '')}" placeholder="예: 물 1L 마시기"></div>
+    <div class="field"><label for="habitType">기록 방식</label><select id="habitType" name="type"><option value="check" ${source.type !== 'number' ? 'selected' : ''}>체크형</option><option value="number" ${source.type === 'number' ? 'selected' : ''}>수치형</option></select></div>
     <div class="two-col" id="numberFields">
-      <div class="field"><label for="targetValue">목표</label><input id="targetValue" name="target_value" type="number" min="0.01" step="0.01" value="${habit?.target_value || 1}"></div>
-      <div class="field"><label for="habitUnit">단위</label><input id="habitUnit" name="unit" maxlength="20" value="${esc(habit?.unit || '회')}"></div>
+      <div class="field"><label for="targetValue">목표</label><input id="targetValue" name="target_value" type="number" min="0.01" step="0.01" value="${source.target_value || 1}"></div>
+      <div class="field"><label for="habitUnit">단위</label><input id="habitUnit" name="unit" maxlength="20" value="${esc(source.unit || '회')}"></div>
     </div>
-    <div class="field"><label>실행 요일</label><div class="day-picker">${DAYS.map((day, index) => `<div><input id="day${index}" name="days" type="checkbox" value="${index}" ${selected.includes(index) ? 'checked' : ''}><label for="day${index}">${day}</label></div>`).join('')}</div></div>
-    <div class="field"><label for="habitColor">색상</label><input id="habitColor" name="color" type="color" value="${habit?.color || '#6366f1'}"></div>
+    <div class="field"><label for="scheduleType">반복 방식</label><select id="scheduleType" name="schedule_type"><option value="weekly" ${scheduleType === 'weekly' ? 'selected' : ''}>요일마다</option><option value="interval" ${scheduleType === 'interval' ? 'selected' : ''}>N일마다</option><option value="monthly" ${scheduleType === 'monthly' ? 'selected' : ''}>매월 1회</option></select></div>
+    <div id="weeklyFields" class="schedule-fields"><div class="field"><label>실행 요일</label><div class="day-picker">${DAYS.map((day, index) => `<div><input id="day${index}" name="days" type="checkbox" value="${index}" ${selected.includes(index) ? 'checked' : ''}><label for="day${index}">${day}</label></div>`).join('')}</div></div></div>
+    <div id="intervalFields" class="schedule-fields two-col">
+      <div class="field"><label for="intervalDays">반복 간격</label><div class="input-with-unit"><input id="intervalDays" name="interval_days" type="number" min="1" max="365" step="1" value="${source.interval_days || 14}"><span>일</span></div></div>
+      <div class="field"><label for="anchorDate">첫 예정일</label><input id="anchorDate" name="anchor_date" type="date" value="${source.anchor_date || localDate()}"></div>
+    </div>
+    <div id="monthlyFields" class="schedule-fields schedule-note">한 달 안에 한 번 완료하면 됩니다. 완료 기록은 주간 달성률과 별도로 관리합니다.</div>
+    <fieldset class="field color-field"><legend>색상</legend><div class="color-palette">${palette.map((option, index) => `<div><input id="color${index}" name="color" type="radio" value="${option}" ${option === color ? 'checked' : ''}><label for="color${index}" style="--swatch:${option}" aria-label="${option}"></label></div>`).join('')}</div></fieldset>
     <div class="modal-actions"><button type="button" class="btn" data-action="close-modal">취소</button><button class="btn primary" type="submit">저장</button></div>
   </form></div>`;
 }
@@ -299,6 +359,8 @@ function render() {
     </nav>${modalHtml()}`;
   const type = document.querySelector('#habitType');
   if (type) updateNumberFields(type.value);
+  const scheduleType = document.querySelector('#scheduleType');
+  if (scheduleType) updateScheduleFields(scheduleType.value);
 }
 
 function toast(message) {
@@ -313,6 +375,31 @@ function toast(message) {
 function updateNumberFields(type) {
   const fields = document.querySelector('#numberFields');
   if (fields) fields.style.display = type === 'number' ? 'grid' : 'none';
+}
+
+function updateScheduleFields(type) {
+  const weekly = document.querySelector('#weeklyFields');
+  const interval = document.querySelector('#intervalFields');
+  const monthly = document.querySelector('#monthlyFields');
+  if (weekly) weekly.style.display = type === 'weekly' ? 'block' : 'none';
+  if (interval) interval.style.display = type === 'interval' ? 'grid' : 'none';
+  if (monthly) monthly.style.display = type === 'monthly' ? 'block' : 'none';
+}
+
+function captureHabitDraft(form = document.querySelector('#habitForm')) {
+  if (!form || state.modal?.type !== 'habit') return;
+  const data = new FormData(form);
+  state.modal.draft = {
+    title: data.get('title') || '',
+    type: data.get('type') || 'check',
+    target_value: Number(data.get('target_value')) || 1,
+    unit: data.get('unit') || '',
+    schedule_type: data.get('schedule_type') || 'weekly',
+    schedule_days: data.getAll('days').map(Number),
+    interval_days: Number(data.get('interval_days')) || 14,
+    anchor_date: data.get('anchor_date') || localDate(),
+    color: data.get('color') || '#6366f1'
+  };
 }
 
 async function mutate(task, success) {
@@ -351,19 +438,25 @@ document.addEventListener('click', async (event) => {
     return loadData();
   }
   if (action === 'reload') return loadData();
-  if (action === 'add-habit') { state.modal = { type: 'habit', habit: null }; render(); return; }
+  if (action === 'add-habit') { state.modal = { type: 'habit', habit: null, draft: null }; render(); return; }
   if (action === 'close-modal') { state.modal = null; render(); return; }
   if (action === 'prev-week') { state.weekRef = addDays(state.weekRef, -7); render(); return; }
   if (action === 'next-week') { state.weekRef = addDays(state.weekRef, 7); render(); return; }
   if (action === 'this-week') { state.weekRef = new Date(); render(); return; }
   const habit = state.habits.find((item) => item.id === button.dataset.id);
   if (action === 'record' && habit) return record(habit, button.dataset.date);
+  if (action === 'periodic-record' && habit) {
+    const info = periodicInfo(habit);
+    const isChecked = habit.schedule_type === 'monthly' ? Boolean(info.completion) : info.completion?.log_date === button.dataset.today;
+    const date = isChecked ? info.completion.log_date : button.dataset.today;
+    return record(habit, date);
+  }
   if (action === 'set-rest' && habit) {
     const current = logFor(habit.id, button.dataset.date);
     const status = current?.status === 'rest' ? 'none' : 'rest';
     return mutate(() => api(`/api/logs/${habit.id}/${button.dataset.date}`, { method: 'PUT', body: JSON.stringify({ status }) }));
   }
-  if (action === 'edit' && habit) { state.modal = { type: 'habit', habit }; render(); return; }
+  if (action === 'edit' && habit) { state.modal = { type: 'habit', habit, draft: null }; render(); return; }
   if ((action === 'archive' || action === 'restore') && habit) {
     const archived = action === 'archive';
     return mutate(() => api(`/api/habits/${habit.id}`, { method: 'PUT', body: JSON.stringify({ archived }) }), archived ? '루틴을 보관했습니다.' : '루틴을 복원했습니다.');
@@ -408,6 +501,8 @@ document.addEventListener('click', async (event) => {
 
 document.addEventListener('change', async (event) => {
   if (event.target.id === 'habitType') updateNumberFields(event.target.value);
+  if (event.target.id === 'scheduleType') updateScheduleFields(event.target.value);
+  if (event.target.closest('#habitForm')) captureHabitDraft();
   if (event.target.id === 'importFile' && event.target.files?.[0]) {
     if (!confirm('현재 서버 데이터를 백업한 뒤 가져온 파일로 교체합니다. 계속할까요?')) return;
     try {
@@ -419,9 +514,14 @@ document.addEventListener('change', async (event) => {
   }
 });
 
+document.addEventListener('input', (event) => {
+  if (event.target.closest('#habitForm')) captureHabitDraft();
+});
+
 document.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (event.target.id === 'habitForm') {
+    captureHabitDraft(event.target);
     const form = new FormData(event.target);
     const body = {
       title: form.get('title'),
@@ -429,11 +529,22 @@ document.addEventListener('submit', async (event) => {
       target_value: Number(form.get('target_value')),
       unit: form.get('unit'),
       color: form.get('color'),
-      schedule_days: form.getAll('days').map(Number)
+      schedule_type: form.get('schedule_type'),
+      schedule_days: form.getAll('days').map(Number),
+      interval_days: Number(form.get('interval_days')),
+      anchor_date: form.get('anchor_date')
     };
     const id = event.target.dataset.id;
-    state.modal = null;
-    return mutate(() => api(id ? `/api/habits/${id}` : '/api/habits', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }), '루틴을 저장했습니다.');
+    try {
+      await api(id ? `/api/habits/${id}` : '/api/habits', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      state.modal = null;
+      await loadData({ quiet: true });
+      toast('루틴을 저장했습니다.');
+    } catch (error) {
+      state.error = error.message;
+      render();
+    }
+    return;
   }
   if (event.target.id === 'numberForm') {
     const form = new FormData(event.target);
@@ -452,9 +563,9 @@ window.addEventListener('appinstalled', () => {
   state.installPrompt = null;
   toast('MyRoutine 설치가 완료되었습니다.');
 });
-window.addEventListener('focus', () => loadData({ quiet: true }));
-document.addEventListener('visibilitychange', () => { if (!document.hidden) loadData({ quiet: true }); });
-setInterval(() => loadData({ quiet: true }), 60_000);
+window.addEventListener('focus', () => { if (!state.modal) loadData({ quiet: true }); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !state.modal) loadData({ quiet: true }); });
+setInterval(() => { if (!state.modal) loadData({ quiet: true }); }, 60_000);
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

@@ -64,6 +64,7 @@ test('habit CRUD and numeric progress normalization work', async () => {
   });
   assert.equal(created.habit.title, '팔굽혀펴기');
   assert.deepEqual(created.habit.schedule_days, [1, 2, 3, 4, 5]);
+  assert.equal(created.habit.schedule_type, 'weekly');
 
   const partial = await request(`/api/logs/${created.habit.id}/2026-09-25`, {
     method: 'PUT', body: JSON.stringify({ status: 'record', numeric_value: 25 })
@@ -81,10 +82,33 @@ test('habit CRUD and numeric progress normalization work', async () => {
   assert.equal(archived.habit.archived, true);
 });
 
+test('interval and monthly routines preserve their recurrence settings', async () => {
+  const interval = await request('/api/habits', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: '손톱 자르기', type: 'check', color: '#3b82f6',
+      schedule_type: 'interval', interval_days: 14, anchor_date: '2026-09-28'
+    })
+  });
+  assert.equal(interval.habit.schedule_type, 'interval');
+  assert.equal(interval.habit.interval_days, 14);
+  assert.equal(interval.habit.anchor_date, '2026-09-28');
+
+  const monthly = await request('/api/habits', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: '가계부 최신화', type: 'check', color: '#10b981',
+      schedule_type: 'monthly', anchor_date: '2026-09-28'
+    })
+  });
+  assert.equal(monthly.habit.schedule_type, 'monthly');
+  assert.equal(monthly.habit.interval_days, 14);
+});
+
 test('export and backup endpoints work', async () => {
   const exported = await request('/api/export');
   assert.equal(exported.format, 'myroutine-backup');
-  assert.equal(exported.habits.length, 1);
+  assert.equal(exported.habits.length, 3);
   assert.equal(exported.logs.length, 1);
   const backedUp = await request('/api/backup', { method: 'POST', body: '{}' });
   assert.equal(backedUp.ok, true);

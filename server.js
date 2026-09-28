@@ -55,15 +55,26 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_logs_habit_date ON habit_logs(habit_id, log_date);
 `);
 
+const habitColumns = new Set(db.prepare('PRAGMA table_info(habits)').all().map((column) => column.name));
+if (!habitColumns.has('schedule_type')) {
+  db.exec("ALTER TABLE habits ADD COLUMN schedule_type TEXT NOT NULL DEFAULT 'weekly'");
+}
+if (!habitColumns.has('interval_days')) {
+  db.exec('ALTER TABLE habits ADD COLUMN interval_days INTEGER NOT NULL DEFAULT 14');
+}
+if (!habitColumns.has('anchor_date')) {
+  db.exec('ALTER TABLE habits ADD COLUMN anchor_date TEXT');
+}
+
 const sql = {
   habits: db.prepare('SELECT * FROM habits ORDER BY archived ASC, sort_order ASC, created_at ASC'),
   habit: db.prepare('SELECT * FROM habits WHERE id = ?'),
   insertHabit: db.prepare(`
-    INSERT INTO habits (id, title, type, unit, target_value, color, schedule_days, sort_order, archived, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+    INSERT INTO habits (id, title, type, unit, target_value, color, schedule_days, schedule_type, interval_days, anchor_date, sort_order, archived, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
   `),
   updateHabit: db.prepare(`
-    UPDATE habits SET title=?, type=?, unit=?, target_value=?, color=?, schedule_days=?, archived=?, updated_at=?
+    UPDATE habits SET title=?, type=?, unit=?, target_value=?, color=?, schedule_days=?, schedule_type=?, interval_days=?, anchor_date=?, archived=?, updated_at=?
     WHERE id=?
   `),
   setOrder: db.prepare('UPDATE habits SET sort_order=?, updated_at=? WHERE id=?'),
@@ -104,7 +115,10 @@ function rowHabit(row) {
   return {
     ...row,
     archived: Boolean(row.archived),
-    schedule_days: JSON.parse(row.schedule_days)
+    schedule_days: JSON.parse(row.schedule_days),
+    schedule_type: ['weekly', 'interval', 'monthly'].includes(row.schedule_type) ? row.schedule_type : 'weekly',
+    interval_days: Math.max(1, Number(row.interval_days) || 14),
+    anchor_date: isDate(row.anchor_date) ? row.anchor_date : row.created_at.slice(0, 10)
   };
 }
 
@@ -116,13 +130,26 @@ function cleanHabit(input, current = null) {
   const target = type === 'number' ? Number(input.target_value ?? current?.target_value ?? 1) : 1;
   if (!Number.isFinite(target) || target <= 0) throw new HttpError(400, '목표 수치는 0보다 커야 합니다.');
   const unit = type === 'number' ? String(input.unit ?? current?.unit ?? '회').trim().slice(0, 20) : '';
+  const scheduleType = input.schedule_type ?? current?.schedule_type ?? 'weekly';
+  if (!['weekly', 'interval', 'monthly'].includes(scheduleType)) throw new HttpError(400, '지원하지 않는 반복 방식입니다.');
+  const intervalDays = Number(input.interval_days ?? current?.interval_days ?? 14);
+  if (!Number.isInteger(intervalDays) || intervalDays < 1 || intervalDays > 365) {
+    throw new HttpError(400, '반복 간격은 1~365일로 입력해 주세요.');
+  }
+  const requestedAnchor = input.anchor_date ?? current?.anchor_date ?? new Date().toISOString().slice(0, 10);
+  if (!isDate(requestedAnchor)) throw new HttpError(400, '첫 예정일이 올바르지 않습니다.');
   return {
     title,
     type,
     unit,
     target_value: target,
     color: cleanColor(input.color ?? current?.color),
-    schedule_days: parseDays(input.schedule_days ?? current?.schedule_days ?? [0, 1, 2, 3, 4, 5, 6]),
+    schedule_days: scheduleType === 'weekly'
+      ? parseDays(input.schedule_days ?? current?.schedule_days ?? [0, 1, 2, 3, 4, 5, 6])
+      : (current?.schedule_days || [0, 1, 2, 3, 4, 5, 6]),
+    schedule_type: scheduleType,
+    interval_days: intervalDays,
+    anchor_date: requestedAnchor,
     archived: Boolean(input.archived ?? current?.archived ?? false)
   };
 }
@@ -221,7 +248,7 @@ async function handleApi(req, res, url) {
     const id = randomUUID();
     const stamp = now();
     const maxOrder = Number(db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS value FROM habits').get().value);
-    sql.insertHabit.run(id, habit.title, habit.type, habit.unit, habit.target_value, habit.color, JSON.stringify(habit.schedule_days), maxOrder + 1, stamp, stamp);
+    sql.insertHabit.run(id, habit.title, habit.type, habit.unit, habit.target_value, habit.color, JSON.stringify(habit.schedule_days), habit.schedule_type, habit.interval_days, habit.anchor_date, maxOrder + 1, stamp, stamp);
     return sendJson(res, 201, { habit: getHabitOrThrow(id) });
   }
 
@@ -229,7 +256,7 @@ async function handleApi(req, res, url) {
   if (method === 'PUT' && habitMatch) {
     const current = getHabitOrThrow(habitMatch[1]);
     const habit = cleanHabit(await readJson(req), current);
-    sql.updateHabit.run(habit.title, habit.type, habit.unit, habit.target_value, habit.color, JSON.stringify(habit.schedule_days), habit.archived ? 1 : 0, now(), current.id);
+    sql.updateHabit.run(habit.title, habit.type, habit.unit, habit.target_value, habit.color, JSON.stringify(habit.schedule_days), habit.schedule_type, habit.interval_days, habit.anchor_date, habit.archived ? 1 : 0, now(), current.id);
     return sendJson(res, 200, { habit: getHabitOrThrow(current.id) });
   }
 
@@ -282,7 +309,7 @@ async function handleApi(req, res, url) {
   if (method === 'GET' && url.pathname === '/api/export') {
     return sendJson(res, 200, {
       format: 'myroutine-backup',
-      version: 1,
+      version: 2,
       exported_at: now(),
       habits: sql.habits.all().map(rowHabit),
       logs: sql.logsAll.all()
@@ -302,7 +329,7 @@ async function handleApi(req, res, url) {
       body.habits.forEach((raw, index) => {
         const habit = cleanHabit(raw);
         const id = /^[0-9a-f-]{36}$/i.test(String(raw.id || '')) ? raw.id : randomUUID();
-        sql.insertHabit.run(id, habit.title, habit.type, habit.unit, habit.target_value, habit.color, JSON.stringify(habit.schedule_days), index, raw.created_at || stamp, raw.updated_at || stamp);
+        sql.insertHabit.run(id, habit.title, habit.type, habit.unit, habit.target_value, habit.color, JSON.stringify(habit.schedule_days), habit.schedule_type, habit.interval_days, habit.anchor_date, index, raw.created_at || stamp, raw.updated_at || stamp);
         if (habit.archived) db.prepare('UPDATE habits SET archived=1 WHERE id=?').run(id);
       });
       body.logs.forEach((raw) => {

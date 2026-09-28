@@ -70,6 +70,15 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 
 .today-list { display: grid; gap: 10px; }
 .today-card { padding: 15px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; }
+.periodic-head { margin-top: 26px; }
+.periodic-list { display: grid; gap: 10px; }
+.periodic-card { padding: 15px; display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; }
+.periodic-card.overdue { border-color: rgba(251, 113, 133, .55); }
+.periodic-main { min-width: 0; }
+.periodic-badge { border-radius: 999px; padding: 5px 8px; color: var(--muted); background: #1e293b; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.periodic-card.overdue .periodic-badge { color: #fecdd3; background: rgba(159, 18, 57, .32); }
+.periodic-card.due .periodic-badge { color: #fde68a; background: rgba(146, 64, 14, .32); }
+.periodic-card.completed .periodic-badge { color: #a7f3d0; background: rgba(6, 78, 59, .38); }
 .habit-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--habit-color, var(--primary)); box-shadow: 0 0 0 5px color-mix(in srgb, var(--habit-color, var(--primary)) 15%, transparent); }
 .habit-title { font-weight: 800; font-size: 15px; overflow-wrap: anywhere; }
 .habit-meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
@@ -122,10 +131,21 @@ th:first-child, td:first-child { text-align: left; position: sticky; left: 0; z-
 .field input, .field select { width: 100%; color: var(--text); background: #0f172a; border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; outline: none; }
 .field input:focus, .field select:focus { border-color: var(--primary); }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.two-col > .field { min-width: 0; }
+.schedule-note { margin-bottom: 13px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); background: rgba(15, 23, 42, .7); font-size: 12px; line-height: 1.55; }
+.input-with-unit { position: relative; }
+.input-with-unit input { padding-right: 38px; }
+.input-with-unit span { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 12px; font-weight: 800; }
 .day-picker { display: grid; grid-template-columns: repeat(7,1fr); gap: 5px; }
 .day-picker input { display: none; }
 .day-picker label { display: grid; place-items: center; height: 37px; border: 1px solid var(--line); border-radius: 10px; background: #0f172a; color: var(--muted); }
 .day-picker input:checked + label { background: #4338ca; color: white; border-color: #6366f1; }
+.color-field { margin: 0 0 13px; padding: 0; border: 0; min-width: 0; }
+.color-field legend { margin-bottom: 9px; padding: 0; color: #cbd5e1; font-size: 12px; font-weight: 800; }
+.color-palette { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
+.color-palette input { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; opacity: 0; pointer-events: none; }
+.color-palette label { display: block; width: 100%; aspect-ratio: 1; border-radius: 50%; background: var(--swatch); border: 3px solid transparent; box-shadow: 0 0 0 1px rgba(148, 163, 184, .28); cursor: pointer; }
+.color-palette input:checked + label { border-color: #f8fafc; box-shadow: 0 0 0 3px var(--swatch); transform: scale(.9); }
 .modal-actions { display: flex; gap: 8px; margin-top: 18px; }
 .modal-actions .btn { flex: 1; }
 .number-value { font-size: 34px; text-align: center; font-weight: 900; }
@@ -143,8 +163,12 @@ th:first-child, td:first-child { text-align: left; position: sticky; left: 0; z-
   .stats-grid { grid-template-columns: 1fr; }
   .today-card { grid-template-columns: auto 1fr; }
   .today-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .periodic-card { grid-template-columns: auto 1fr auto; }
+  .periodic-card .check-button { grid-column: 3; grid-row: 1 / span 2; }
+  .periodic-badge { grid-column: 2; justify-self: start; }
   .manage-row { align-items: flex-start; }
   .manage-actions { max-width: 112px; }
+  .color-palette { grid-template-columns: repeat(5, 1fr); gap: 12px; }
 }
 
 @media (display-mode: standalone) {
