@@ -105,6 +105,13 @@ th:first-child, td:first-child { text-align: left; position: sticky; left: 0; z-
 .cell-button.partial { background: var(--warn); color: #422006; border-color: var(--warn); font-size: 10px; }
 .cell-button.rest { background: #475569; color: white; }
 .cell-button.unscheduled { opacity: .22; cursor: default; }
+.periodic-record-head { margin-top: 24px; }
+.periodic-record-list { display: grid; gap: 10px; }
+.periodic-record-row { padding: 15px; display: grid; grid-template-columns: auto minmax(120px, .8fr) minmax(230px, 1.5fr) auto; align-items: center; gap: 12px; }
+.periodic-record-row.overdue { border-color: rgba(251, 113, 133, .55); }
+.periodic-record-main { min-width: 0; }
+.periodic-record-dates { display: flex; flex-wrap: wrap; gap: 5px 14px; color: var(--muted); font-size: 12px; }
+.periodic-record-dates span { white-space: nowrap; }
 
 .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
 .stat { padding: 17px; }
@@ -166,6 +173,9 @@ th:first-child, td:first-child { text-align: left; position: sticky; left: 0; z-
   .periodic-card { grid-template-columns: auto 1fr auto; }
   .periodic-card .check-button { grid-column: 3; grid-row: 1 / span 2; }
   .periodic-badge { grid-column: 2; justify-self: start; }
+  .periodic-record-row { grid-template-columns: auto 1fr auto; align-items: start; }
+  .periodic-record-dates { grid-column: 2 / -1; display: grid; gap: 4px; }
+  .periodic-record-row .periodic-badge { grid-column: 3; grid-row: 1; }
   .manage-row { align-items: flex-start; }
   .manage-actions { max-width: 112px; }
   .color-palette { grid-template-columns: repeat(5, 1fr); gap: 12px; }

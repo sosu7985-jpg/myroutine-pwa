@@ -60,6 +60,12 @@ function activeHabits() {
   return state.habits.filter((habit) => !habit.archived);
 }
 
+function scheduleLabel(habit) {
+  if (habit.schedule_type === 'interval') return `${habit.interval_days}일마다`;
+  if (habit.schedule_type === 'monthly') return '매월 1회';
+  return habit.schedule_days.map((day) => DAYS[day]).join('·');
+}
+
 async function api(path, options = {}) {
   const response = await fetch(`${API_ORIGIN}${path}`, {
     ...options,
@@ -241,6 +247,10 @@ function weekHtml() {
   const start = localDate(days[0]);
   const end = localDate(days[6]);
   const habits = activeHabits().filter((habit) => habit.schedule_type === 'weekly');
+  const periodic = activeHabits()
+    .filter((habit) => habit.schedule_type !== 'weekly')
+    .map((habit) => ({ habit, info: periodicInfo(habit, today) }))
+    .sort((a, b) => a.info.sort - b.info.sort || a.habit.sort_order - b.habit.sort_order);
   return `
     <div class="panel week-toolbar">
       <div class="week-nav"><button class="btn small" data-action="prev-week">‹</button><button class="btn small" data-action="this-week">오늘</button><button class="btn small" data-action="next-week">›</button></div>
@@ -256,7 +266,24 @@ function weekHtml() {
         const button = statusButton(logFor(habit.id, key), habit.type === 'number' ? '+' : '');
         return `<td class="${key === today ? 'today-col' : ''}"><button class="cell-button ${button.status}" data-action="record" data-id="${habit.id}" data-date="${key}">${button.content}</button></td>`;
       }).join('')}</tr>`).join('') : `<tr><td colspan="8" class="empty">등록된 루틴이 없습니다.</td></tr>`}
-    </tbody></table></div>`;
+    </tbody></table></div>
+    ${periodic.length ? `
+      <div class="section-head periodic-record-head"><div><h2>주기 루틴 기록</h2><p>선택한 주의 완료 기록과 현재 예정 상태</p></div></div>
+      <div class="periodic-record-list">${periodic.map(({ habit, info }) => {
+        const completions = completedLogs(habit.id);
+        const weekCompletions = completions.filter((log) => log.log_date >= start && log.log_date <= end);
+        const lastCompletion = completions[0]?.log_date || '없음';
+        const currentStatus = habit.schedule_type === 'monthly'
+          ? (info.completion ? `이번 달 완료 · ${info.completion.log_date}` : '이번 달 미완료')
+          : `다음 예정 · ${info.dueDate}`;
+        const badge = info.state === 'overdue' ? '기한 지남' : info.state === 'due' ? (habit.schedule_type === 'monthly' ? '이번 달' : '오늘') : info.state === 'completed' ? '완료' : '예정';
+        return `<article class="panel periodic-record-row ${info.state}">
+          <span class="habit-dot" style="--habit-color:${habit.color}"></span>
+          <div class="periodic-record-main"><div class="habit-title">${esc(habit.title)}</div><div class="habit-meta">${scheduleLabel(habit)}</div></div>
+          <div class="periodic-record-dates"><span>선택한 주: ${weekCompletions.length ? weekCompletions.map((log) => log.log_date.slice(5).replace('-', '.')).join(', ') + ' 완료' : '완료 기록 없음'}</span><span>마지막 완료: ${lastCompletion}</span><span>${currentStatus}</span></div>
+          <span class="periodic-badge">${badge}</span>
+        </article>`;
+      }).join('')}</div>` : ''}`;
 }
 
 function statsHtml() {
@@ -282,11 +309,6 @@ function statsHtml() {
 function manageHtml() {
   const active = activeHabits();
   const archived = state.habits.filter((habit) => habit.archived);
-  const scheduleLabel = (habit) => habit.schedule_type === 'interval'
-    ? `${habit.interval_days}일마다`
-    : habit.schedule_type === 'monthly'
-      ? '매월 1회'
-      : habit.schedule_days.map((d) => DAYS[d]).join('·');
   const row = (habit, index, list, isArchived = false) => `<article class="panel manage-row">
     <span class="habit-dot" style="--habit-color:${habit.color}"></span>
     <div class="manage-main"><div class="habit-title">${esc(habit.title)}</div><div class="habit-meta">${scheduleLabel(habit)} · ${habit.type === 'number' ? `${habit.target_value} ${esc(habit.unit)}` : '체크형'}</div></div>
@@ -355,7 +377,7 @@ function render() {
   const content = state.tab === 'today' ? todayHtml() : state.tab === 'week' ? weekHtml() : state.tab === 'stats' ? statsHtml() : manageHtml();
   app.innerHTML = `<main class="app-shell">${topHtml()}${content}</main>
     <nav class="tabs" aria-label="주요 메뉴">
-      ${[['today','☀️','오늘'],['week','🗓️','주간'],['stats','📊','통계'],['manage','⚙️','관리']].map(([key, icon, label]) => `<button class="tab ${state.tab === key ? 'active' : ''}" data-action="tab" data-tab="${key}"><span>${icon}</span><span>${label}</span></button>`).join('')}
+      ${[['today','☀️','오늘'],['week','🗓️','기록'],['stats','📊','통계'],['manage','⚙️','관리']].map(([key, icon, label]) => `<button class="tab ${state.tab === key ? 'active' : ''}" data-action="tab" data-tab="${key}"><span>${icon}</span><span>${label}</span></button>`).join('')}
     </nav>${modalHtml()}`;
   const type = document.querySelector('#habitType');
   if (type) updateNumberFields(type.value);
